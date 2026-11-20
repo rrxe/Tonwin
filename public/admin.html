@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>STORMY Admin</title>
+<style>
+:root{--bg:#F3F7F3;--card:#FFFFFF;--line:#E2EAE4;--ink:#192720;--mut:#738179;--c1:#26765C;--c2:#61B68A;--c3:#D6F58C;--ok:#27835D;--bad:#C84E54}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(900px 500px at 80% -10%,#D6F58C55,transparent),var(--bg);color:var(--ink);font-family:system-ui,"Segoe UI",Tahoma,sans-serif;padding:14px;max-width:1100px;margin-inline:auto}
+h1{font-size:20px;margin:6px 0 12px;background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3));-webkit-background-clip:text;color:transparent}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 10px;font-size:15px}
+input,select,textarea{width:100%;background:#F8FAF8;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:9px 10px;font:inherit}
+textarea{min-height:80px;resize:vertical}
+label{display:block;font-size:12px;color:var(--mut);margin:10px 0 4px}
+button{background:linear-gradient(135deg,var(--c2),var(--c1));color:#FFFFFF;border:0;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer;font:inherit;font-weight:700}
+button.sec{background:#F5F8F5;color:var(--ink);border:1px solid var(--line)}
+button.bad{background:var(--bad);color:#2a0612}
+button.ok{background:var(--ok);color:#04210f}
+button:disabled{opacity:.5}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;position:sticky;top:0;background:var(--bg);padding:8px 0;z-index:5}
+.tabs button{background:#FFFFFF;color:var(--mut);border:1px solid var(--line)}
+.tabs button.on{background:linear-gradient(135deg,var(--c2),var(--c1));color:#FFFFFF}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{background:#FFFFFF;border:1px solid var(--line);border-radius:12px;padding:12px}
+.stat b{display:block;font-size:20px;margin-top:4px}
+.stat span{font-size:12px;color:var(--mut)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row>*{flex:1;min-width:120px}
+.row>button{flex:0 0 auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:start;vertical-align:top}
+th{color:var(--mut);font-weight:600}
+.tw{overflow-x:auto}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;background:#EEF3EF}
+.pill.ok{background:#E5F4E8;color:var(--ok)}.pill.bad{background:#FCE9E9;color:var(--bad)}.pill.wait{background:#FFF4DF;color:#9A6A20}
+.sw{display:flex;align-items:center;gap:10px;margin-top:10px}
+.sw input{width:auto}
+.hint{font-size:12px;color:var(--mut);margin-top:4px;line-height:1.6}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#FFFFFF;border:1px solid var(--line);padding:10px 16px;border-radius:12px;display:none;z-index:50}
+.hide{display:none}
+.bar{display:flex;height:22px;border-radius:8px;overflow:hidden;margin-top:8px}
+.bar i{display:block;font-style:normal;font-size:10px;text-align:center;line-height:22px;color:#FFFFFF;overflow:hidden}
+</style>
+</head>
+<body>
+<h1>STORMY — لوحة التحكم</h1>
+
+<div class="card" id="login">
+  <h3>الدخول</h3>
+  <div class="row">
+    <input type="password" id="secret" placeholder="ADMIN_SECRET" autocomplete="off">
+    <button onclick="login()">دخول</button>
+  </div>
+  <div class="hint" id="loginMsg"></div>
+</div>
+
+<div id="app" class="hide">
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+</div>
+<div id="toast"></div>
+
+<script>
+const TABS=[['dash','📊 الرئيسية'],['settings','⚙️ الإعدادات'],['ads','📺 الإعلانات'],['tasks','✅ المهام'],['gifts','🎁 الأكواد'],['wd','💸 السحوبات'],['users','👤 اللاعبين'],['bc','📣 بث']];
+let secret=localStorage.getItem('crystara_admin')||'';
+let SET=null, tab='dash';
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m,bad){const t=$('#toast');t.textContent=m;t.style.borderColor=bad?'#e08a8a':'#8fd0b0';t.style.display='block';clearTimeout(toast._t);toast._t=setTimeout(()=>t.style.display='none',2600)}
+async function api(action,data={}){
+  const r=await fetch('/api/admin',{method:'POST',headers:{'Content-Type':'application/json','x-admin-secret':secret},body:JSON.stringify({action,...data})});
+  const j=await r.json().catch(()=>({ok:false,error:'bad response'}));
+  if(!j.ok)throw new Error(j.error||'error');return j;
+}
+async function login(){
+  secret=$('#secret').value.trim()||secret;
+  try{await api('stats');localStorage.setItem('crystara_admin',secret);$('#login').classList.add('hide');$('#app').classList.remove('hide');SET=await api('settings_get');draw();go('dash')}
+  catch(e){$('#loginMsg').textContent='❌ '+e.message}
+}
+function draw(){$('#tabs').innerHTML=TABS.map(([k,n])=>`<button data-k="${k}" class="${k===tab?'on':''}" onclick="go('${k}')">${n}</button>`).join('')}
+async function go(k){tab=k;draw();$('#view').innerHTML='<div class="card">...</div>';try{await VIEWS[k]()}catch(e){toast(e.message,1)}}
+const fmt=n=>Number(n||0).toLocaleString('en',{maximumFractionDigits:3});
+const dt=s=>s?new Date(s).toLocaleString('en-GB',{hour12:false}).slice(0,17):'—';
+
+/* ============ الرئيسية ============ */
+const VIEWS={
+async dash(){
+  const s=await api('stats');
+  const box=(l,v)=>`<div class="stat"><span>${l}</span><b>${v}</b></div>`;
+  $('#view').innerHTML=`<div class="grid">
+   ${box('إجمالي اللاعبين',fmt(s.players))}${box('جدد اليوم',fmt(s.newToday))}${box('نشطين 24 ساعة',fmt(s.active24))}${box('يعدّنون الآن',fmt(s.miningNow))}
+   ${box('لفّوا اليوم',fmt(s.spinnersToday))}${box('سحوبات معلقة',fmt(s.pendingWithdrawals))}${box('كريستال متداول',fmt(s.circulating))}${box('قيمته بالدولار','$'+fmt(s.circulatingUsd))}
+   ${box('إجمالي الإعلانات المشاهدة',fmt(s.adsTotal))}${box('محظورين',fmt(s.banned))}</div>`;
+},
+
+/* ============ الإعدادات العامة ============ */
+async settings(){renderSettings(['general','economy','mining','spin','daily','referral','withdraw','channel'])},
+async ads(){renderSettings(['ads','auto'])},
+
+/* ============ المهام ============ */
+async tasks(){
+  const {tasks}=await api('tasks_list');
+  $('#view').innerHTML=`<div class="card"><h3>إضافة / تعديل مهمة</h3>${taskForm({})}</div>
+  <div class="card tw"><table><tr><th>#</th><th>العنوان</th><th>النوع</th><th>المكافأة</th><th>يومية</th><th>فعّالة</th><th></th></tr>
+  ${tasks.map(t=>`<tr><td>${t.id}</td><td>${esc(t.title)}<div class="hint">${esc(t.url||t.chat_id||'')}</div></td><td>${t.type}</td><td>${fmt(t.reward)}</td><td>${t.repeat_daily?'✓':''}</td><td>${t.active?'✓':'✗'}</td>
+  <td><button class="sec" onclick='editTask(${JSON.stringify(t).replace(/'/g,"&#39;")})'>تعديل</button> <button class="bad" onclick="delTask(${t.id})">حذف</button></td></tr>`).join('')}</table></div>`;
+},
+
+/* ============ الأكواد ============ */
+async gifts(){
+  const {gifts}=await api('gifts_list');
+  $('#view').innerHTML=`<div class="card"><h3>كود هدية جديد</h3>
+   <div class="row"><input id="g_code" placeholder="CODE"><input id="g_cr" type="number" step="any" placeholder="كريستال"><input id="g_max" type="number" placeholder="عدد الاستخدامات" value="1"><button onclick="saveGift()">حفظ</button></div></div>
+  <div class="card tw"><table><tr><th>الكود</th><th>كريستال</th><th>استخدام</th><th>فعّال</th><th></th></tr>
+  ${gifts.map(g=>`<tr><td>${esc(g.code)}</td><td>${fmt(g.crystals)}</td><td>${g.used}/${g.max_uses}</td><td>${g.active?'✓':'✗'}</td><td><button class="sec" onclick="toggleGift('${esc(g.code)}',${g.crystals},${g.max_uses},${!g.active})">${g.active?'تعطيل':'تفعيل'}</button> <button class="bad" onclick="delGift('${esc(g.code)}')">حذف</button></td></tr>`).join('')}</table></div>`;
+},
+
+/* ============ السحوبات ============ */
+async wd(){
+  const st=window._wdst||'pending';
+  const {withdrawals}=await api('withdrawals_list',{status:st});
+  $('#view').innerHTML=`<div class="card"><div class="row"><select id="wdst" onchange="window._wdst=this.value;go('wd')">
+   ${['pending','paid','rejected','all'].map(x=>`<option value="${x}" ${x===st?'selected':''}>${x}</option>`).join('')}</select></div></div>
+  <div class="card tw"><table><tr><th>#</th><th>اللاعب</th><th>المبلغ</th><th>الطريقة / العنوان</th><th>الحالة</th><th></th></tr>
+  ${withdrawals.map(w=>`<tr><td>${w.id}<div class="hint">${dt(w.created_at)}</div></td><td>${esc(w.username?'@'+w.username:'')}<div class="hint">${w.telegram_id}</div></td>
+  <td>$${fmt(w.usd)}<div class="hint">${fmt(w.crystals)} 💎</div></td><td>${esc(w.method)}<div class="hint" style="user-select:all">${esc(w.address)}</div></td>
+  <td><span class="pill ${w.status==='paid'?'ok':w.status==='rejected'?'bad':'wait'}">${w.status}</span><div class="hint">${esc(w.note||'')}</div></td>
+  <td>${w.status==='pending'?`<button class="ok" onclick="setWd(${w.id},'paid')">تم الدفع</button> <button class="bad" onclick="setWd(${w.id},'rejected')">رفض</button>`:''}</td></tr>`).join('')}</table></div>`;
+},
+
+/* ============ اللاعبين ============ */
+async users(){
+  $('#view').innerHTML=`<div class="card"><div class="row"><input id="uq" placeholder="آيدي / يوزر / اسم" onkeydown="if(event.key==='Enter')loadUsers()"><button onclick="loadUsers()">بحث</button></div></div><div id="ulist"></div><div id="udet"></div>`;
+  loadUsers();
+},
+
+/* ============ بث ============ */
+async bc(){
+  $('#view').innerHTML=`<div class="card"><h3>رسالة جماعية (HTML بسيط مسموح: &lt;b&gt; &lt;i&gt; &lt;a&gt;)</h3>
+  <textarea id="bctext" placeholder="نص الرسالة"></textarea>
+  <div class="sw"><input type="checkbox" id="bcact"><label style="margin:0">فقط النشطين آخر 7 أيام</label></div>
+  <div class="row" style="margin-top:10px"><button onclick="sendBc()">إرسال</button></div>
+  <div class="hint" id="bcst"></div></div>`;
+  pollBc();
+}};
+
+/* ---------- الإعدادات: بناء الفورم من السكيما ---------- */
+function renderSettings(groups){
+  const {schema,groups:names,values}=SET;
+  const val=(d)=>values[d.k]!==undefined&&values[d.k]!==null?values[d.k]:(d.t==='bool'?String(d.d):String(d.d));
+  let html='';
+  for(const g of groups){
+    const defs=schema.filter(d=>d.g===g);
+    if(!defs.length)continue;
+    html+=`<div class="card"><h3>${names[g]||g}</h3>`;
+    for(const d of defs){
+      const v=val(d);
+      if(d.t==='bool')html+=`<div class="sw"><input type="checkbox" data-k="${d.k}" ${v==='true'?'checked':''}><label style="margin:0;color:var(--ink)">${esc(d.l)}</label></div>`;
+      else if(d.t==='area')html+=`<label>${esc(d.l)}</label><textarea data-k="${d.k}" ${d.k==='spin_weights'?'oninput="wPrev()"':''}>${esc(v)}</textarea>${d.k==='spin_weights'?'<div id="wprev"></div>':''}`;
+      else if(d.t==='blockid')html+=`<label>${esc(d.l)}</label><div class="row"><span style="flex:0 0 auto;color:var(--mut)">int-</span><input data-k="${d.k}" inputmode="numeric" placeholder="رقم البلوك فقط مثل 12345" value="${esc(v)}"></div>`;
+      else html+=`<label>${esc(d.l)}</label><input data-k="${d.k}" ${d.t==='text'?'':'type="number" step="any"'} value="${esc(v)}">`;
+    }
+    html+=`</div>`;
+  }
+  if(groups.includes('ads'))html=`<div class="card"><div class="hint">الإعلانات كلها من نوع <b>int</b> (Adsgram Interstitial). اكتب رقم البلوك فقط بدون <b>int-</b>. أي مكان تتركه فاضي يستخدم البلوك الافتراضي. الإعلان التلقائي يشتغل بس إذا بلوكه (أو الافتراضي) مضبوط.</div></div>`+html;
+  html+=`<div class="row"><button onclick="saveSettings()">💾 حفظ</button></div>`;
+  $('#view').innerHTML=html;
+  if($('#wprev'))wPrev();
+}
+function wPrev(){
+  const el=document.querySelector('[data-k=spin_weights]');
+  const w=el.value.split(/[,\s]+/).filter(Boolean).map(Number);
+  const box=$('#wprev');
+  if(w.length!==15||w.some(n=>!isFinite(n)||n<0)){box.innerHTML='<div class="hint" style="color:var(--bad)">لازم 15 رقم</div>';return}
+  const t=w.reduce((a,b)=>a+b,0)||1;
+  const ev=w.reduce((a,x,i)=>a+x*(i+1),0)/t;
+  box.innerHTML=`<div class="bar">${w.map((x,i)=>`<i style="width:${x/t*100}%;background:hsl(${190+i*11},85%,60%)" title="${i+1}">${x/t>0.04?i+1:''}</i>`).join('')}</div>
+  <div class="hint">متوسط الربح للفّة: <b>${ev.toFixed(2)}</b> كريستال — ${w.map((x,i)=>`${i+1}: ${(x/t*100).toFixed(1)}%`).join(' · ')}</div>`;
+}
+async function saveSettings(){
+  const out={};
+  document.querySelectorAll('#view [data-k]').forEach(el=>{out[el.dataset.k]=el.type==='checkbox'?(el.checked?'true':'false'):el.value});
+  try{await api('settings_set',{values:out});Object.assign(SET.values,out);toast('✅ تم الحفظ')}catch(e){toast(e.message,1)}
+}
+
+/* ---------- مهام ---------- */
+function taskForm(t){return `<input type="hidden" id="t_id" value="${t.id||''}">
+ <div class="row"><input id="t_title" placeholder="العنوان (عربي)" value="${esc(t.title||'')}"><input id="t_en" placeholder="Title (English)" value="${esc(t.title_en||'')}"></div>
+ <div class="row" style="margin-top:8px"><select id="t_type"><option value="link" ${t.type==='link'?'selected':''}>رابط (انتظار ثم استلام)</option><option value="channel" ${t.type==='channel'?'selected':''}>اشتراك قناة (تحقق تلقائي)</option><option value="ad" ${t.type==='ad'?'selected':''}>مشاهدة إعلان</option></select>
+ <input id="t_url" placeholder="الرابط https://..." value="${esc(t.url||'')}"><input id="t_chat" placeholder="@channel (لنوع القناة)" value="${esc(t.chat_id||'')}"></div>
+ <div class="row" style="margin-top:8px"><input id="t_rew" type="number" step="any" placeholder="المكافأة" value="${t.reward??5}"><input id="t_wait" type="number" placeholder="ثواني الانتظار" value="${t.wait_s??8}"><input id="t_sort" type="number" placeholder="الترتيب" value="${t.sort??0}"></div>
+ <div class="sw"><input type="checkbox" id="t_daily" ${t.repeat_daily?'checked':''}><label style="margin:0;color:var(--ink)">تتجدد يومياً</label>
+ <input type="checkbox" id="t_act" ${t.active===false?'':'checked'} style="margin-inline-start:18px"><label style="margin:0;color:var(--ink)">فعّالة</label></div>
+ <div class="row" style="margin-top:10px"><button onclick="saveTask()">حفظ</button></div>`}
+function editTask(t){$('#view .card').innerHTML='<h3>تعديل مهمة #'+t.id+'</h3>'+taskForm(t);scrollTo(0,0)}
+async function saveTask(){
+  const task={id:$('#t_id').value||undefined,title:$('#t_title').value,title_en:$('#t_en').value,type:$('#t_type').value,url:$('#t_url').value,chat_id:$('#t_chat').value,reward:$('#t_rew').value,wait_s:$('#t_wait').value,sort:$('#t_sort').value,repeat_daily:$('#t_daily').checked,active:$('#t_act').checked};
+  try{await api('task_save',{task});toast('✅ تم');go('tasks')}catch(e){toast(e.message,1)}
+}
+async function delTask(id){if(!confirm('حذف المهمة؟'))return;await api('task_delete',{id});go('tasks')}
+
+/* ---------- أكواد ---------- */
+async function saveGift(){try{await api('gift_save',{gift:{code:$('#g_code').value,crystals:$('#g_cr').value,max_uses:$('#g_max').value}});toast('✅ تم');go('gifts')}catch(e){toast(e.message,1)}}
+async function toggleGift(code,crystals,max,active){await api('gift_save',{gift:{code,crystals,max_uses:max,active}});go('gifts')}
+async function delGift(code){if(!confirm('حذف؟'))return;await api('gift_delete',{code});go('gifts')}
+
+/* ---------- سحوبات ---------- */
+async function setWd(id,status){
+  const note=status==='rejected'?prompt('سبب الرفض (اختياري، يوصل للمستخدم):')||'':'';
+  if(status==='paid'&&!confirm('تأكيد أنك دفعت؟'))return;
+  try{await api('withdrawal_set',{id,status,note});toast('✅ تم');go('wd')}catch(e){toast(e.message,1)}
+}
+
+/* ---------- لاعبين ---------- */
+async function loadUsers(){
+  const {users}=await api('users_list',{q:$('#uq').value});
+  $('#ulist').innerHTML=`<div class="card tw"><table><tr><th>اللاعب</th><th>الرصيد</th><th>الإجمالي</th><th>إعلانات</th><th>حالة</th><th></th></tr>
+  ${users.map(u=>`<tr><td>${esc(u.first_name||'')} ${u.username?'@'+esc(u.username):''}<div class="hint">${u.telegram_id} · ${dt(u.created_at)}</div></td><td>${fmt(u.crystals)}</td><td>${fmt(u.total_earned)}</td><td>${u.ads_watched}</td>
+  <td>${u.banned?'<span class="pill bad">محظور</span>':''}${u.is_dup?'<span class="pill wait">جهاز مكرر</span>':''}</td><td><button class="sec" onclick="userDet('${u.telegram_id}')">فتح</button></td></tr>`).join('')}</table></div>`;
+}
+async function userDet(id){
+  const {player:p,ledger,refs}=await api('user_get',{id});
+  if(!p)return toast('غير موجود',1);
+  $('#udet').innerHTML=`<div class="card"><h3>${esc(p.first_name||'')} (${p.telegram_id})</h3>
+  <div class="hint">رصيد: <b>${fmt(p.crystals)}</b> · إجمالي أرباح: ${fmt(p.total_earned)} · إعلانات: ${p.ads_watched} · إحالات: ${refs} · محال من: ${p.referred_by||'—'} · محفظة: ${esc(p.wallet||'—')}</div>
+  <div class="row" style="margin-top:10px"><input id="adj" type="number" step="any" placeholder="تعديل الرصيد (+/-)"><button onclick="adjust('${p.telegram_id}')">تطبيق</button>
+  <button class="${p.banned?'ok':'bad'}" onclick="ban('${p.telegram_id}',${!p.banned})">${p.banned?'فك الحظر':'حظر'}</button>
+  ${p.is_dup?`<button class="sec" onclick="clearDup('${p.telegram_id}')">إلغاء علامة التكرار</button>`:''}</div>
+  <div class="tw" style="margin-top:10px"><table><tr><th>المصدر</th><th>الفرق</th><th>الرصيد</th><th>وقت</th></tr>
+  ${ledger.map(l=>`<tr><td>${esc(l.source)} <span class="hint">${esc(l.detail||'')}</span></td><td>${fmt(l.delta)}</td><td>${fmt(l.balance_after)}</td><td>${dt(l.created_at)}</td></tr>`).join('')}</table></div></div>`;
+  $('#udet').scrollIntoView({behavior:'smooth'});
+}
+async function adjust(id){try{const r=await api('user_adjust',{id,amount:$('#adj').value});toast('✅ الرصيد الجديد '+fmt(r.balance));userDet(id)}catch(e){toast(e.message,1)}}
+async function ban(id,b){await api('user_ban',{id,banned:b});userDet(id);loadUsers()}
+async function clearDup(id){await api('user_clear_dup',{id});userDet(id)}
+
+/* ---------- بث ---------- */
+async function sendBc(){
+  if(!confirm('إرسال الرسالة لكل اللاعبين؟'))return;
+  try{const r=await api('broadcast',{text:$('#bctext').value,onlyActive:$('#bcact').checked});toast('بدأ الإرسال إلى '+r.total);pollBc()}catch(e){toast(e.message,1)}
+}
+async function pollBc(){
+  if(tab!=='bc')return;
+  const s=await api('broadcast_status');const el=$('#bcst');if(!el)return;
+  el.textContent=s.total?`${s.running?'⏳ جاري':'✅ انتهى'} — أُرسل ${s.sent} / ${s.total} (فشل ${s.failed})`:'';
+  if(s.running)setTimeout(pollBc,2000);
+}
+
+if(secret){$('#secret').value=secret;login()}
+</script>
+</body>
+</html>
